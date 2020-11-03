@@ -26,6 +26,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 
 	cronjobv1 "tutorial.kubebuilder.io/project/api/v1"
 )
@@ -145,6 +147,7 @@ var _ = Describe("CronJob controller", func() {
 
 				We then take the stubbed Job and set its owner reference to point to our test CronJob.
 				This ensures that the test Job belongs to, and is tracked by, our test CronJob.
+				createJob := batchv1.Job{}
 				Once that’s done, we create our new Job instance.
 			*/
 			By("By creating a new Job")
@@ -179,6 +182,34 @@ var _ = Describe("CronJob controller", func() {
 			controllerRef := metav1.NewControllerRef(createdCronjob, gvk)
 			testJob.SetOwnerReferences([]metav1.OwnerReference{*controllerRef})
 			Expect(k8sClient.Create(ctx, testJob)).Should(Succeed())
+
+			// Update Test Job
+			testJob.Status.Active = 5
+			Expect(k8sClient.Update(ctx, testJob)).Should(Succeed())
+
+			// Get with k8sClient
+			createdJob := &batchv1.Job{}
+			ns := types.NamespacedName{Name: JobName, Namespace: CronjobNamespace}
+			err := k8sClient.Get(ctx, ns, createdJob)
+			if createdJob != nil && !reflect.DeepEqual(createdJob, &batchv1.Job{}) {
+				fmt.Printf("%+v\n", createdJob)
+			}
+
+			// Get with Clienset
+			clientset, err := kubernetes.NewForConfig(cfg)
+			if err != nil {
+				panic("could not create clientset to retrieve should be created job")
+			}
+
+			createdJob, err = clientset.BatchV1().Jobs("default").Get(context.Background(), JobName, metav1.GetOptions{})
+			if err != nil {
+				panic(err)
+			}
+
+			if createdJob != nil && !reflect.DeepEqual(createdJob, &batchv1.Job{}) {
+				fmt.Printf("%+v\n", createdJob)
+			}
+
 			/*
 				Adding this Job to our test CronJob should trigger our controller’s reconciler logic.
 				After that, we can write a test that evaluates whether our controller eventually updates our CronJob’s Status field as expected!
